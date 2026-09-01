@@ -1,0 +1,38 @@
+{
+  "manifest_version": 3,
+  "name": "Scalable Sammeldownload – Wertpapierabrechnungen (inoffiziell)",
+  "short_name": "SC Sammeldownload",
+  "version": "1.1.0",
+  "description": "Markiere Transaktionen in Scalable Capital und lade alle Wertpapierabrechnungen auf einmal als PDF herunter. Inoffiziell, läuft rein lokal.",
+  "permissions": ["downloads", "scripting", "storage"],
+  "host_permissions": [
+    "https://de.scalable.capital/*",
+    "https://scalable.capital/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Scalable Sammeldownload",
+    "default_icon": "icon128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://de.scalable.capital/*", "https://scalable.capital/*"],
+      "js": ["injector.js"],
+      "run_at": "document_start",
+      "world": "MAIN",
+      "all_frames": false
+    },
+    {
+      "matches": ["https://de.scalable.capital/*", "https://scalable.capital/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "icons": {
+    "128": "icon128.png"
+  }
+}

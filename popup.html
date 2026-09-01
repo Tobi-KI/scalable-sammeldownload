@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body { font: 13px/1.5 system-ui, sans-serif; width: 320px; margin: 0; padding: 16px; color: #1a2b3c; }
+    h1 { font-size: 15px; margin: 0 0 10px; }
+    p { margin: 8px 0; }
+    .disclaimer { background: #fff6e5; border: 1px solid #f0c36d; border-radius: 8px; padding: 10px; font-size: 12px; }
+    button { margin-top: 12px; padding: 8px 14px; border-radius: 7px; border: none; background: #00a0af; color: #fff; cursor: pointer; width: 100%; }
+    button.secondary { background: #f4f7f9; color: #1a2b3c; border: 1px solid #c8d2da; margin-top: 6px; }
+    #accepted { display: none; }
+  </style>
+</head>
+<body>
+  <div id="gate">
+    <h1>Scalable Sammeldownload</h1>
+    <div class="disclaimer">
+      <strong>Bitte beachten:</strong>
+      <p>Diese Erweiterung ist <strong>nicht offiziell</strong> und steht in keiner Verbindung zu Scalable Capital Bank GmbH. Sie nutzt Schnittstellen der Scalable-Webseite, die nicht dokumentiert sind und sich jederzeit ändern können.</p>
+      <p>Die Nutzung erfolgt auf eigene Verantwortung und kann gegen die Nutzungsbedingungen des Brokers verstoßen. Es werden keinerlei Daten an Dritte übertragen – alle Vorgänge laufen ausschließlich lokal in deinem Browser.</p>
+    </div>
+    <button id="accept">Ich habe verstanden – Erweiterung aktivieren</button>
+  </div>
+  <div id="accepted">
+    <h1>Scalable Sammeldownload</h1>
+    <p>✅ Aktiviert. Öffne <strong>scalable.capital → Transaktionen</strong> und nutze das Panel unten rechts.</p>
+    <p style="font-size:12px;color:#555;">Markiere Transaktionen mit den Checkboxen und klicke „Ausgewählte laden" – alle Wertpapierabrechnungen werden als PDF gespeichert.</p>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>
