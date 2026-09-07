@@ -3,18 +3,21 @@
 <head>
   <meta charset="UTF-8">
   <style>
-    body { font: 13px/1.5 system-ui, sans-serif; width: 320px; margin: 0; padding: 16px; color: #1a2b3c; }
-    h1 { font-size: 15px; margin: 0 0 10px; }
+    body { font: 13px/1.5 system-ui, sans-serif; width: 320px; margin: 0; padding: 16px; color: #101112; background: #fff; }
+    h1 { font-size: 15px; margin: 0 0 10px; display: flex; align-items: center; gap: 8px; }
+    h1 .logo { width: 22px; height: 22px; border-radius: 6px; background: #28ebcf; color: #101112; display: inline-flex; align-items: center; justify-content: center; font-weight: 800; font-size: 13px; }
     p { margin: 8px 0; }
     .disclaimer { background: #fff6e5; border: 1px solid #f0c36d; border-radius: 8px; padding: 10px; font-size: 12px; }
-    button { margin-top: 12px; padding: 8px 14px; border-radius: 7px; border: none; background: #00a0af; color: #fff; cursor: pointer; width: 100%; }
-    button.secondary { background: #f4f7f9; color: #1a2b3c; border: 1px solid #c8d2da; margin-top: 6px; }
+    .feature { background: #f2fbf9; border: 1px solid #b8efe6; border-radius: 8px; padding: 10px 12px; font-size: 12px; margin: 10px 0; }
+    .feature li { margin: 3px 0; }
+    button { margin-top: 12px; padding: 8px 14px; border-radius: 8px; border: none; background: #28ebcf; color: #101112; font-weight: 700; cursor: pointer; width: 100%; }
+    button.secondary { background: #f4f7f9; color: #101112; border: 1px solid #c8d2da; margin-top: 6px; font-weight: 400; }
     #accepted { display: none; }
   </style>
 </head>
 <body>
   <div id="gate">
-    <h1>Scalable Sammeldownload</h1>
+    <h1><span class="logo">⇩</span> Scalable Sammeldownload</h1>
     <div class="disclaimer">
       <strong>Bitte beachten:</strong>
       <p>Diese Erweiterung ist <strong>nicht offiziell</strong> und steht in keiner Verbindung zu Scalable Capital Bank GmbH. Sie nutzt Schnittstellen der Scalable-Webseite, die nicht dokumentiert sind und sich jederzeit ändern können.</p>
@@ -23,9 +26,17 @@
     <button id="accept">Ich habe verstanden – Erweiterung aktivieren</button>
   </div>
   <div id="accepted">
-    <h1>Scalable Sammeldownload</h1>
-    <p>✅ Aktiviert. Öffne <strong>scalable.capital → Transaktionen</strong> und nutze das Panel unten rechts.</p>
-    <p style="font-size:12px;color:#555;">Markiere Transaktionen mit den Checkboxen und klicke „Ausgewählte laden" – alle Wertpapierabrechnungen werden als PDF gespeichert.</p>
+    <h1><span class="logo">⇩</span> Scalable Sammeldownload</h1>
+    <div class="feature">
+      <strong>So funktioniert's:</strong>
+      <ul>
+        <li><strong>Scalable.capital → Transaktionen</strong> öffnen – Checkboxen erscheinen automatisch an den Zeilen</li>
+        <li>Zeilen anhaken → unten rechts erscheint das Sammeldownload-Panel</li>
+        <li>Belege wählen: <strong>Wertpapierabrechnungen</strong> und/oder <strong>Dividendenbelege</strong></li>
+        <li>Optional <strong>Datum range</strong> setzen, um auch alte Dokumente nachträglich zu laden</li>
+      </ul>
+    </div>
+    <p style="font-size:12px;color:#555;">PDFs landen in <code>Downloads/scalable-dokumente/</code>, benannt nach Muster <code>Wertpapier_ISIN_Abrechnung_Datum.pdf</code> bzw. <code>…_Dividende_…pdf</code>.</p>
   </div>
   <script src="popup.js"></script>
 </body>
