@@ -13,6 +13,18 @@
     button { margin-top: 12px; padding: 8px 14px; border-radius: 8px; border: none; background: #28ebcf; color: #101112; font-weight: 700; cursor: pointer; width: 100%; }
     button.secondary { background: #f4f7f9; color: #101112; border: 1px solid #c8d2da; margin-top: 6px; font-weight: 400; }
     #accepted { display: none; }
+    .settings { border-top: 1px solid #e3e8ec; margin-top: 12px; padding-top: 10px; }
+    .settings h2 { font-size: 13px; margin: 0 0 8px; display: flex; justify-content: space-between; }
+    .settings h2 .saved { color: #19a08e; font-weight: 400; font-size: 11.5px; visibility: hidden; }
+    .settings label { display: block; font-size: 12px; margin: 6px 0; }
+    .settings select,
+    .settings input[type="text"] { width: 100%; box-sizing: border-box; padding: 6px 8px; border: 1px solid #c8d2da; border-radius: 6px; font: 12.5px system-ui, sans-serif; margin-top: 3px; }
+    .settings input[type="text"]:focus { outline: none; border-color: #28ebcf; }
+    .preview { font: 11.5px ui-monospace, Consolas, monospace; background: #f4f7f9; border-radius: 6px; padding: 5px 8px; margin: 6px 0; word-break: break-all; }
+    .small { font-size: 11.5px; color: #555; }
+    .link { background: none; border: none; color: #555; text-decoration: underline; padding: 0; margin: 10px 0 0; width: auto; font-weight: 400; font-size: 11.5px; }
+    .link.inline { margin: 0; }
+    .link:disabled { color: #aaa; text-decoration: none; cursor: default; }
   </style>
 </head>
 <body>
@@ -24,6 +36,7 @@
       <p>Die Nutzung erfolgt auf eigene Verantwortung und kann gegen die Nutzungsbedingungen des Brokers verstoßen. Es werden keinerlei Daten an Dritte übertragen – alle Vorgänge laufen ausschließlich lokal in deinem Browser.</p>
     </div>
     <button id="accept">Ich habe verstanden – Erweiterung aktivieren</button>
+    <p class="small">Bis zur Bestätigung bleibt die Erweiterung auf der Scalable-Seite inaktiv.</p>
   </div>
   <div id="accepted">
     <h1><span class="logo">⇩</span> Scalable Sammeldownload</h1>
@@ -33,10 +46,34 @@
         <li><strong>Scalable.capital → Transaktionen</strong> öffnen – Checkboxen erscheinen automatisch an den Zeilen</li>
         <li>Zeilen anhaken → unten rechts erscheint das Sammeldownload-Panel</li>
         <li>Belege wählen: <strong>Wertpapierabrechnungen</strong> und/oder <strong>Dividendenbelege</strong></li>
-        <li>Optional <strong>Datum range</strong> setzen, um auch alte Dokumente nachträglich zu laden</li>
+        <li>Optional einen <strong>Zeitraum</strong> setzen, um auch alte Dokumente nachträglich zu laden</li>
       </ul>
     </div>
-    <p style="font-size:12px;color:#555;">PDFs landen in <code>Downloads/scalable-dokumente/</code>, benannt nach Muster <code>Wertpapier_ISIN_Abrechnung_Datum.pdf</code> bzw. <code>…_Dividende_…pdf</code>.</p>
+    <div class="settings">
+      <h2>Ablageort <span class="saved" id="set-saved">✓ gespeichert</span></h2>
+      <label>Ordner im Download-Verzeichnis
+        <input type="text" id="set-folder" placeholder="leer = direkt in Downloads" spellcheck="false">
+      </label>
+      <label><input type="checkbox" id="set-bykind"> Unterordner nach Belegart (Abrechnungen / Dividenden)</label>
+      <label><input type="checkbox" id="set-byyear"> Unterordner nach Jahr</label>
+      <label>Dateiname
+        <select id="set-name">
+          <option value="name">Wertpapier zuerst</option>
+          <option value="date">Datum zuerst (chronologisch sortiert)</option>
+        </select>
+      </label>
+      <div class="preview" id="set-preview"></div>
+      <button class="secondary" id="open-folder">📂 Ablageordner öffnen</button>
+      <p class="small">Chrome erlaubt Erweiterungen nur das Speichern innerhalb des Download-Ordners. Den Download-Ordner selbst änderst du in den Chrome-Einstellungen unter „Downloads“.</p>
+    </div>
+
+    <div class="settings">
+      <h2>Verlauf</h2>
+      <label><input type="checkbox" id="set-skip"> Bereits geladene Belege überspringen</label>
+      <p class="small"><span id="done-count">0</span> Belege bisher geladen · <button class="link inline" id="done-reset">Verlauf zurücksetzen</button></p>
+    </div>
+
+    <button class="link" id="revoke">Erweiterung deaktivieren</button>
   </div>
   <script src="popup.js"></script>
 </body>

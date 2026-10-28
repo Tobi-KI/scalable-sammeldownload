@@ -4,15 +4,17 @@ Chrome-Erweiterung: Markiere Transaktionen in Scalable Capital und lade
 **Wertpapierabrechnungen und Dividendenbelege** auf einmal als PDF herunter –
 optional pro Zeitraum, auch für alte Dokumente.
 
-![Version](https://img.shields.io/badge/version-1.2.1-blue) ![Lizenz](https://img.shields.io/badge/Lizenz-MIT-green) ![inoffiziell](https://img.shields.io/badge/Status-inoffiziell-orange)
+![Version](https://img.shields.io/badge/version-1.4.0-blue) ![Lizenz](https://img.shields.io/badge/Lizenz-MIT-green) ![inoffiziell](https://img.shields.io/badge/Status-inoffiziell-orange)
 
 ## Features
 
 - Checkboxen erscheinen automatisch an jeder Zeile der Transaktionsliste
 - Panel blendet ein, sobald du mindestens eine Zeile anhakst
 - Belege wählbar: **Wertpapierabrechnungen** und/oder **Dividendenbelege**
-- Optionaler **Zeitraum** (Von/Bis) – lädt alle passenden Belege im Zeitraum nach, auch alte
-- Dateinamen nach Schema `Wertpapiername_ISIN_Abrechnung[_Sparplan]_Datum.pdf` bzw. `…_Dividende_Datum.pdf`
+- Optionaler **Zeitraum** (Von/Bis) – lädt alle passenden Belege im Zeitraum nach, auch alte; Schnellwahl „Letzter Monat“, „Dieses Jahr“, „Letztes Jahr“
+- Bereits geladene Belege werden übersprungen (abschaltbar, Verlauf im Popup zurücksetzbar)
+- Dateinamen nach Schema `Wertpapiername_ISIN_Abrechnung[_Sparplan]_Datum.pdf` bzw. `…_Dividende_Datum.pdf` – oder mit Datum vorne für chronologische Sortierung
+- Ablageort einstellbar (Ordner im Download-Verzeichnis, Unterordner nach Belegart und/oder Jahr)
 - Download über die normale Scalable-Web-Session (Cookies bleiben im Browser)
 - Läuft komplett lokal – keine Server, kein Tracking, keine Datenübertragung
 
@@ -31,10 +33,11 @@ optional pro Zeitraum, auch für alte Dokumente.
 
 ## Nutzung
 
+1. Einmalig: Erweiterungs-Symbol anklicken und den Haftungshinweis bestätigen (vorher bleibt die Erweiterung inaktiv)
 1. Auf scalable.capital einloggen → **Transaktionen**
 2. Checkboxen an den Zeilen erscheinen automatisch
 3. Gewünschte Transaktionen anhaken → unten rechts öffnet sich das Panel
-4. Belege + ggf. Zeitraum wählen → „PDFs herunterladen“ → PDFs landen in `Downloads/scalable-dokumente/`
+4. Belege + ggf. Zeitraum wählen → „PDFs herunterladen“ → PDFs landen standardmäßig in `Downloads/scalable-dokumente/` (änderbar im Popup unter „Ablageort“)
 
 ## Haftungsausschluss
 

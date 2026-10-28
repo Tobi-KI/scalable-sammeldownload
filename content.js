@@ -10,13 +10,20 @@
 (() => {
   'use strict';
 
-  const API = (window.chrome ?? window.browser)?.runtime;
+  const EXT = window.chrome ?? window.browser;
+  const API = EXT?.runtime;
+  const ACCEPT_KEY = 'scDocDlAccepted'; // gesetzt im Popup (Haftungshinweis bestätigt)
+  const SETTINGS_KEY = 'scDocDlSettings'; // Einstellungen aus dem Popup
+  const DONE_KEY = 'scDocDlDone';         // IDs bereits gespeicherter Dokumente
+  const FILE_DEFAULTS = { dateFirst: false, skipDone: true };
   const MINT = '#28ebcf';
   const MINT_DARK = '#19c9b2';
   const DARK = '#101112';
   const DARK_2 = '#191a1c';
   const GRAY = '#9aa3ad';
   const ROW_SEL = 'button[class*="transactionItemButton"]';
+  const ISSUES_URL = 'https://github.com/Tobi-KI/scalable-sammeldownload/issues';
+  const NO_ROWS_GRACE_MS = 6000; // so lange darf die Liste zum Laden brauchen
 
   function log(...a) { console.log('[ScDocDL]', ...a); }
 
@@ -86,9 +93,19 @@
       }
     }`;
 
+  // Bei Überlast (429/503) kurz warten und erneut versuchen
+  async function fetchRetry(url, opts, tries = 4) {
+    for (let i = 0; ; i++) {
+      const res = await fetch(url, opts);
+      if ((res.status !== 429 && res.status !== 503) || i >= tries - 1) return res;
+      const wait = Number(res.headers.get('retry-after')) * 1000 || 1000 * 2 ** i;
+      await sleep(Math.min(wait, 10000));
+    }
+  }
+
   let gqlSeq = 0;
   async function gql(op, query, variables) {
-    const res = await fetch('/broker/api/data', {
+    const res = await fetchRetry('/broker/api/data', {
       method: 'POST',
       credentials: 'include',
       headers: {
@@ -113,22 +130,25 @@
     return data?.account?.brokerPortfolio?.moreTransactions || { cursor: null, total: 0, transactions: [] };
   }
 
-  // Ganzen Zeitraum (oder erste maxPages Seiten) laden
+  // Ganzen Zeitraum (oder erste maxPages Seiten) laden.
+  // truncated = true, wenn wegen maxPages nicht alle Transaktionen geladen wurden.
   async function fetchTransactions({ fromTime, toTime, maxPages = 10, pageSize = 100, onProgress }) {
     const all = [];
-    let cursor;
+    let cursor, total = 0;
     for (let page = 0; page < maxPages; page++) {
+      if (cancelRequested) break;
       const input = { pageSize };
       if (fromTime) input.fromTime = fromTime;
       if (toTime) input.toTime = toTime;
       if (cursor) input.cursor = cursor;
       const mt = await fetchTxPage(input);
       all.push(...mt.transactions);
+      total = mt.total || all.length;
       onProgress?.(all.length, mt.total);
       cursor = mt.cursor;
-      if (!cursor || !mt.transactions.length) break;
+      if (!cursor || !mt.transactions.length) { cursor = null; break; }
     }
-    return all;
+    return { transactions: all, total, truncated: !!cursor && all.length < total };
   }
 
   async function fetchDetails(txId) {
@@ -138,7 +158,7 @@
 
   // PDF über den echten App-Endpunkt laden: /broker/api/download/<YYYY-MM-DD>?id=<docId>
   async function fetchDocPdf(docId, date) {
-    const res = await fetch(`/broker/api/download/${date}?id=${encodeURIComponent(docId)}`, { credentials: 'include' });
+    const res = await fetchRetry(`/broker/api/download/${date}?id=${encodeURIComponent(docId)}`, { credentials: 'include' });
     if (!res.ok) return { ok: false, status: res.status };
     const blob = await res.blob();
     const head = new Uint8Array(await blob.slice(0, 5).arrayBuffer());
@@ -174,7 +194,8 @@
     return out;
   }
 
-  function buildFilename(det, tx, kind) {
+  // dateFirst: Datum vorne, damit die Dateien im Explorer chronologisch sortiert sind
+  function buildFilename(det, tx, kind, dateFirst = false) {
     const date = (det.lastEventDateTime || tx.lastEventDateTime || '').slice(0, 10).replaceAll('-', '');
     const isin = (det.security?.isin || tx.isin || tx.relatedIsin || '').trim();
     const name = (det.security?.name || tx.description || '')
@@ -182,7 +203,7 @@
     const isSparplan = tx.securityTransactionType === 'SAVINGS_PLAN' ||
       /sparplan/i.test(tx.nonTradeSecurityTransactionType || '');
     const kindLabel = kind === 'Dividende' ? 'Dividende' : (isSparplan ? 'Abrechnung_Sparplan' : 'Abrechnung');
-    const parts = [name, isin, kindLabel, date].filter(Boolean);
+    const parts = (dateFirst ? [date, name, isin, kindLabel] : [name, isin, kindLabel, date]).filter(Boolean);
     let n = parts.join('_') || 'dokument';
     if (!n.toLowerCase().endsWith('.pdf')) n += '.pdf';
     return n;
@@ -214,8 +235,28 @@
     return '';
   }
 
-  function matchByData(data, txList) {
-    let candidates = txList;
+  function normText(s) {
+    return (s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  }
+
+  // Momentaufnahme einer Zeile – reicht zum Zuordnen, auch wenn die Zeile später
+  // beim Scrollen aus dem DOM verschwindet
+  function rowData(row) {
+    const text = (row.innerText || '').replace(/\s+/g, ' ');
+    return {
+      when: rowDateTime(row),
+      amount: rowAmount(row),
+      kind: rowKind(row),
+      text,
+      label: text.slice(0, 40)
+    };
+  }
+
+  // taken: bereits vergebene Transaktions-IDs. Verhindert, dass zwei gleiche
+  // Zeilen (z. B. zwei Sparpläne mit gleichem Datum und Betrag) auf dieselbe
+  // Transaktion fallen und ein Beleg fehlt.
+  function matchByData(data, txList, taken = new Set()) {
+    let candidates = txList.filter(t => !taken.has(t.id));
     if (data.when) candidates = candidates.filter(t => t.lastEventDateTime === data.when);
     if (data.amount !== null && data.amount !== undefined && candidates.length > 1) {
       const byAmount = candidates.filter(t => Math.abs((t.amount ?? NaN) - data.amount) < 0.005);
@@ -231,15 +272,13 @@
       const byKind = candidates.filter(kindMap[data.kind]);
       if (byKind.length) candidates = byKind;
     }
+    // Wertpapiername aus der Zeile gegen die Transaktionsbeschreibung
+    if (data.text && candidates.length > 1) {
+      const text = normText(data.text);
+      const byName = candidates.filter(t => t.description && text.includes(normText(t.description)));
+      if (byName.length) candidates = byName;
+    }
     return candidates[0]?.id || null;
-  }
-
-  function matchTxId(row, txList) {
-    return matchByData({
-      when: rowDateTime(row),
-      amount: rowAmount(row),
-      kind: rowKind(row)
-    }, txList);
   }
 
   // ============================================================
@@ -248,7 +287,7 @@
   let overlay = null;
   const items = new Map();          // rowEl -> { wrap, cb, sig }
   const checkedSigs = new Set();    // Auswahl überlebt Neu-Renders der Zeilen
-  const checkedRowData = new Map(); // sig -> {when, amount, kind, label} (für Matching nach Unmount)
+  const checkedRowData = new Map(); // sig -> rowData() (für Matching nach Unmount)
 
   function rowSig(row) {
     return (row.getAttribute('aria-labelledby') || '') + '|' +
@@ -272,19 +311,18 @@
     return checkedSigs.size;
   }
 
-  // Zeilendaten beim Anhaken einfrieren (Zeilen können beim Scrollen verschwinden)
-  function rememberRowData(row) {
-    const sig = rowSig(row);
-    checkedRowData.set(sig, {
-      when: rowDateTime(row),
-      amount: rowAmount(row),
-      kind: rowKind(row),
-      label: (row.innerText || '').replace(/\s+/g, ' ').slice(0, 40)
-    });
+  // Findet ROW_SEL länger keine Zeilen, hat Scalable vermutlich die Seite
+  // umgebaut – dann lieber einen Hinweis zeigen als stillschweigend nichts
+  let noRowsSince = 0;
+  function updateNoRowsHint(n) {
+    if (n) noRowsSince = 0;
+    else if (!noRowsSince) noRowsSince = Date.now();
+    const show = !n && Date.now() - noRowsSince > NO_ROWS_GRACE_MS;
+    setDisp(panel?.querySelector('#sc-docdl-norows'), show ? 'block' : 'none');
   }
 
   function syncOverlay() {
-    if (!onTxPage()) { removeOverlay(); return; }
+    if (!isActive()) { removeOverlay(); noRowsSince = 0; return; }
     const ov = ensureOverlay();
     const live = new Set();
     const vh = window.innerHeight;
@@ -292,6 +330,7 @@
     const scrollY = window.scrollY;
 
     const rowsAll = [...document.querySelectorAll(ROW_SEL)];
+    updateNoRowsHint(rowsAll.length);
     for (const row of rowsAll) {
       const r = row.getBoundingClientRect();
       const visible = r.width > 0 && r.height > 0 &&
@@ -315,8 +354,9 @@
         cb.checked = checkedSigs.has(sig);
         cb.addEventListener('change', () => {
           if (cb.checked) {
+            // Zeilendaten beim Anhaken einfrieren (Zeilen können beim Scrollen verschwinden)
             checkedSigs.add(it.sig);
-            rememberRowData(row);
+            checkedRowData.set(it.sig, rowData(row));
           } else {
             checkedSigs.delete(it.sig);
             checkedRowData.delete(it.sig);
@@ -464,6 +504,14 @@
       #sc-docdl-panel input[type="date"]::-webkit-calendar-picker-indicator:hover { opacity:.75; }
       #sc-docdl-panel select:focus, #sc-docdl-panel input[type="date"]:focus { border-color:${MINT}; }
       #sc-docdl-panel .dates { display:flex; gap:8px; }
+      #sc-docdl-panel .presets { display:flex; gap:6px; margin-top:7px; }
+      #sc-docdl-panel .presets button {
+        flex:1; background:${DARK_2}; color:#cfd5db; border:1px solid #33373c;
+        border-radius:999px; padding:4px 0; font:11.5px system-ui,sans-serif; cursor:pointer;
+        transition:border-color .12s ease, color .12s ease;
+      }
+      #sc-docdl-panel .presets button:hover { border-color:${MINT}; color:#fff; }
+      #sc-docdl-panel .presets button[data-preset="clear"] { flex:0 0 auto; padding:4px 10px; }
       #sc-docdl-panel .hint { font-size:11px; color:${GRAY}; margin-top:6px; }
       #sc-docdl-panel .go {
         width:100%; margin-top:13px; padding:10px 0; border:none; border-radius:8px;
@@ -473,9 +521,28 @@
       #sc-docdl-panel .go:hover { background:${MINT_DARK}; }
       #sc-docdl-panel .go:disabled { background:#3a3f45; color:#8a9199; cursor:not-allowed; }
       #sc-docdl-panel .status {
-        margin-top:9px; font-size:11.5px; color:${GRAY}; white-space:pre-line; max-height:110px; overflow:auto;
+        margin-top:9px; font-size:11.5px; color:${GRAY}; white-space:pre-line; overflow-wrap:anywhere; max-height:110px; overflow:auto;
       }
       #sc-docdl-panel .status.ok { color:${MINT}; }
+      #sc-docdl-panel .warn {
+        display:none; margin-bottom:10px; padding:7px 9px; border-radius:8px; font-size:11.5px;
+        color:#ffd27f; background:rgba(255,190,80,.08); border:1px solid rgba(255,190,80,.3);
+      }
+      #sc-docdl-panel .warn a { color:${MINT}; }
+      #sc-docdl-panel .sel-row { display:flex; justify-content:flex-end; margin-top:6px; }
+      #sc-docdl-panel .clear-sel {
+        display:none; background:none; border:none; padding:0; cursor:pointer;
+        color:${GRAY}; font:11.5px system-ui,sans-serif; text-decoration:underline;
+      }
+      #sc-docdl-panel .clear-sel:hover { color:#fff; }
+      #sc-docdl-panel .go.cancel { background:#3a3f45; color:#fff; }
+      #sc-docdl-panel .go.cancel:hover { background:#4a5058; }
+      #sc-docdl-panel .open {
+        display:none; width:100%; margin-top:8px; padding:7px 0; border-radius:8px; cursor:pointer;
+        background:${DARK_2}; color:#fff; border:1px solid #33373c; font:12.5px system-ui,sans-serif;
+        transition:border-color .12s ease;
+      }
+      #sc-docdl-panel .open:hover { border-color:${MINT}; }
       #sc-docdl-panel .status.err { color:#ff8f8f; }
     `;
     document.documentElement.appendChild(style);
@@ -514,6 +581,11 @@
           </div>
           <button class="close" title="Schließen">×</button>
         </div>
+        <div class="warn" id="sc-docdl-norows">
+          Keine Transaktionszeilen erkannt – evtl. hat Scalable die Seite geändert.
+          Der Download per Zeitraum kann trotzdem funktionieren.
+          <a href="${ISSUES_URL}" target="_blank" rel="noopener">Problem melden</a>
+        </div>
         <label class="fld" for="sc-docdl-mode">Belege</label>
         <select id="sc-docdl-mode">
           <option value="beides" selected>Abrechnungen + Dividenden</option>
@@ -525,17 +597,59 @@
           <input type="date" id="sc-docdl-from" />
           <input type="date" id="sc-docdl-to" />
         </div>
+        <div class="presets">
+          <button type="button" data-preset="lastMonth">Letzter Monat</button>
+          <button type="button" data-preset="thisYear">Dieses Jahr</button>
+          <button type="button" data-preset="lastYear">Letztes Jahr</button>
+          <button type="button" data-preset="clear" title="Zeitraum leeren">×</button>
+        </div>
         <div class="hint">Ohne Zeitraum werden die ausgewählten Zeilen geladen. Mit Zeitraum alle passenden Belege im Zeitraum – auch alte.</div>
         <button class="go" id="sc-docdl-go">PDFs herunterladen</button>
+        <div class="sel-row"><button class="clear-sel" id="sc-docdl-clear">Auswahl aufheben</button></div>
         <div class="status" id="sc-docdl-status"></div>
+        <button class="open" id="sc-docdl-open">📂 Ordner öffnen</button>
       `;
       document.body.appendChild(panel);
       panel.querySelector('.close').addEventListener('click', closePanel);
-      panel.querySelector('#sc-docdl-go').addEventListener('click', onDownload);
+      panel.querySelector('#sc-docdl-go').addEventListener('click', () => {
+        if (!running) { onDownload(); return; }
+        cancelRequested = true; // greift nach dem gerade laufenden Schritt
+        updateGoButton();
+      });
+      panel.querySelector('#sc-docdl-clear').addEventListener('click', () => {
+        checkedSigs.clear();
+        checkedRowData.clear();
+        refreshChecks();
+      });
+      panel.querySelector('#sc-docdl-open').addEventListener('click', () => {
+        API.sendMessage({ type: 'SC_SHOW_FOLDER' }).catch((e) => log('showFolder', e));
+      });
       panel.querySelector('#sc-docdl-from').addEventListener('change', updateGoButton);
       panel.querySelector('#sc-docdl-to').addEventListener('change', updateGoButton);
       panel.querySelector('#sc-docdl-mode').addEventListener('change', updateGoButton);
+      panel.querySelector('.presets').addEventListener('click', (e) => {
+        const b = e.target.closest('button[data-preset]');
+        if (b) applyPreset(b.dataset.preset);
+      });
     }
+  }
+
+  // Lokales Datum als YYYY-MM-DD (toISOString wäre UTC und kann einen Tag verrutschen)
+  function ymd(d) {
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+
+  function applyPreset(p) {
+    const now = new Date(), y = now.getFullYear(), m = now.getMonth();
+    const ranges = {
+      lastMonth: [new Date(y, m - 1, 1), new Date(y, m, 0)],
+      thisYear: [new Date(y, 0, 1), now],
+      lastYear: [new Date(y - 1, 0, 1), new Date(y - 1, 11, 31)]
+    };
+    const [a, b] = ranges[p] || [null, null];
+    panel.querySelector('#sc-docdl-from').value = a ? ymd(a) : '';
+    panel.querySelector('#sc-docdl-to').value = b ? ymd(b) : '';
+    updateGoButton();
   }
 
   function openPanel() {
@@ -570,11 +684,17 @@
     const from = panel.querySelector('#sc-docdl-from').value;
     const to = panel.querySelector('#sc-docdl-to').value;
     const n = checkedCount();
-    if (from || to) {
-      setDisabled(go, running);
+    go.classList.toggle('cancel', running);
+    setDisp(panel.querySelector('#sc-docdl-clear'), n && !running ? 'inline' : 'none');
+    if (running) {
+      // Während des Downloads wird der Knopf zum Abbrechen-Knopf
+      setDisabled(go, cancelRequested);
+      setText(go, cancelRequested ? 'Wird abgebrochen…' : 'Abbrechen');
+    } else if (from || to) {
+      setDisabled(go, false);
       setText(go, 'PDFs im Zeitraum herunterladen');
     } else {
-      setDisabled(go, running || n === 0);
+      setDisabled(go, n === 0);
       setText(go, n ? `${n} ausgewählt – PDFs herunterladen` : 'Erst Zeilen auswählen');
     }
   }
@@ -606,6 +726,7 @@
   // Sammel-Download
   // ============================================================
   let running = false;
+  let cancelRequested = false; // gesetzt vom Abbrechen-Knopf, geprüft zwischen den Schritten
 
   function toEpoch(v, endOfDay = false) {
     if (!v) return null;
@@ -619,75 +740,89 @@
     const from = toEpoch(panel.querySelector('#sc-docdl-from').value);
     const to = toEpoch(panel.querySelector('#sc-docdl-to').value, true);
     const rangeMode = !!(from || to);
+    const modeLabel = { beides: 'Belege', abrechnung: 'Abrechnungen', dividende: 'Dividendenbelege' }[mode] || 'Belege';
+    const warnings = [];
 
     running = true;
+    cancelRequested = false;
     updateGoButton();
+    setDisp(panel.querySelector('#sc-docdl-open'), 'none');
     try {
+      const stored = await EXT.storage.local.get([SETTINGS_KEY, DONE_KEY]).catch(() => ({}));
+      const settings = { ...FILE_DEFAULTS, ...stored[SETTINGS_KEY] };
+      const doneIds = new Set(stored[DONE_KEY] || []);
+
       // ---------- 1) Ziel-Transaktionen bestimmen ----------
       let targets = []; // [{id, tx}]
       if (rangeMode) {
         setStatus('Lade Transaktionen im Zeitraum…');
-        const txs = await fetchTransactions({
+        const { transactions: txs, total, truncated } = await fetchTransactions({
           fromTime: from || 0,
           toTime: to || Math.floor(Date.now() / 1000) + 86400,
-          maxPages: 20
+          maxPages: 20,
+          onProgress: (n, t) => setStatus(`Lade Transaktionen im Zeitraum… ${n}${t ? '/' + t : ''}`)
         });
+        if (truncated) warnings.push(`Nur ${txs.length} von ${total} Transaktionen geladen – bitte Zeitraum verkleinern.`);
         targets = txs.filter(tx => docKindFor(tx, mode).length).map(tx => ({ id: tx.id, tx }));
         setStatus(`${txs.length} Transaktionen im Zeitraum, ${targets.length} mit passenden Belegen…`);
       } else {
         if (!checkedSigs.size) { setStatus('Keine Zeilen ausgewählt.'); return; }
-        setStatus('Lade Transaktionsliste…');
-        const txs = await fetchTransactions({ maxPages: 4, pageSize: 100 });
-        // 1) Sichtbare Zeilen zuerst (frische Daten)
-        const matchedIds = new Set();
-        const matchedSigs = new Set();
-        const unmatchedLabels = [];
+        // Sichtbare Zeilen liefern frische Daten, weggescrollte die eingefrorenen
         for (const row of document.querySelectorAll(ROW_SEL)) {
           const sig = rowSig(row);
-          if (!checkedSigs.has(sig)) continue;
-          const id = matchTxId(row, txs);
-          if (id) {
-            matchedIds.add(id);
-            matchedSigs.add(sig);
-            targets.push({ id, tx: txs.find(t => t.id === id) });
-          }
+          if (checkedSigs.has(sig)) checkedRowData.set(sig, rowData(row));
         }
-        // 2) Übrige (ggf. weggescrollte) Haken über die eingefrorenen Zeilendaten
-        for (const sig of checkedSigs) {
-          if (matchedSigs.has(sig)) continue;
-          const data = checkedRowData.get(sig);
-          const id = data ? matchByData(data, txs) : null;
-          if (id && !matchedIds.has(id)) {
-            matchedIds.add(id);
-            targets.push({ id, tx: txs.find(t => t.id === id) });
-          } else if (!id) {
+        const rows = [...checkedSigs].map(sig => ({ sig, data: checkedRowData.get(sig) }));
+
+        // Nur den Zeitraum der markierten Zeilen laden – so werden auch sehr
+        // alte Zeilen gefunden, ohne die komplette Historie abzufragen
+        const times = rows.map(r => Date.parse(r.data?.when || '')).filter(Number.isFinite);
+        const range = times.length === rows.length
+          ? { fromTime: Math.floor(Math.min(...times) / 1000) - 86400, toTime: Math.floor(Math.max(...times) / 1000) + 86400, maxPages: 20 }
+          : { maxPages: 4 };
+        setStatus('Lade Transaktionsliste…');
+        const { transactions: txs } = await fetchTransactions(range);
+
+        const taken = new Set();
+        const unmatchedLabels = [];
+        for (const { sig, data } of rows) {
+          const id = data ? matchByData(data, txs, taken) : null;
+          if (id) {
+            taken.add(id);
+            targets.push({ id, tx: txs.find(t => t.id === id), sig });
+          } else {
             unmatchedLabels.push(data?.label || sig.slice(0, 40));
           }
         }
         if (unmatchedLabels.length) {
-          setStatus(`⚠️ ${unmatchedLabels.length} Zeile(n) nicht zugeordnet (z. B. anderer Filter).`);
-          await sleep(1200);
+          warnings.push(`${unmatchedLabels.length} Zeile(n) nicht zugeordnet: ${unmatchedLabels.slice(0, 2).join(' · ')}`);
         }
       }
 
-      if (!targets.length) { setStatus('Keine passenden Transaktionen gefunden.'); return; }
+      if (cancelRequested) { setStatus('⏹ Abgebrochen – nichts gespeichert.'); return; }
+      if (!targets.length) {
+        setStatus(['Keine passenden Transaktionen gefunden.', ...warnings].join('\n'), 'err');
+        return;
+      }
 
       // ---------- 2) Details + Dokumente einsammeln ----------
       const collected = new Map(); // docId -> {doc, kind, det, tx}
       let done = 0;
       const skipped = [];
+      const failedTx = new Set(); // Transaktionen mit Fehlern – deren Haken bleiben stehen
       const queue = targets.slice();
       const worker = async () => {
-        while (queue.length) {
+        while (queue.length && !cancelRequested) {
           const t = queue.shift();
           try {
             const det = await fetchDetails(t.id);
             if (det) {
               for (const { doc, kind } of pickDocs(det, t.tx, mode)) {
-                if (!collected.has(doc.id)) collected.set(doc.id, { doc, kind, det, tx: t.tx });
+                if (!collected.has(doc.id)) collected.set(doc.id, { doc, kind, det, tx: t.tx, txId: t.id });
               }
             }
           } catch (e) {
+            failedTx.add(t.id);
             skipped.push(`${t.tx?.description || t.id}: ${String(e).slice(0, 60)}`);
           }
           done++;
@@ -697,19 +832,39 @@
         }
       };
       await Promise.all([worker(), worker(), worker()]);
+      if (cancelRequested) { setStatus('⏹ Abgebrochen – nichts gespeichert.'); return; }
 
       if (!collected.size) {
-        setStatus(`Keine ${mode === 'dividende' ? 'Dividendenbelege' : 'Abrechnungen'} gefunden.` +
+        setStatus([`Keine ${modeLabel} gefunden.`, ...warnings].join('\n') +
           (skipped.length ? `\nFehler: ${skipped.slice(0, 3).join(' · ')}` : ''), 'err');
         return;
       }
 
       // ---------- 3) PDFs laden und speichern ----------
       let ok = 0;
+      let savedBase = null;
       const errors = [];
-      const docItems = [...collected.values()];
+      let docItems = [...collected.values()];
+      let skippedDone = 0;
+      if (settings.skipDone) {
+        docItems = docItems.filter(it => !doneIds.has(it.doc.id));
+        skippedDone = collected.size - docItems.length;
+      }
+      if (!docItems.length) {
+        setStatus([`Alle ${skippedDone} ${modeLabel} wurden bereits früher geladen.`,
+          'Neu laden: im Popup „Verlauf zurücksetzen“.', ...warnings].join('\n'), 'ok');
+        clearChecks(targets, failedTx);
+        setDisp(panel.querySelector('#sc-docdl-open'), 'block');
+        return;
+      }
       for (let i = 0; i < docItems.length; i++) {
-        const { doc, kind, det, tx } = docItems[i];
+        if (cancelRequested) {
+          // Nicht mehr geladene Belege: Haken dieser Zeilen stehen lassen
+          for (const it of docItems.slice(i)) failedTx.add(it.txId);
+          break;
+        }
+        const { doc, kind, det, tx, txId } = docItems[i];
+        const errorsBefore = errors.length;
         setStatus(`Lade ${i + 1}/${docItems.length}: ${(det.security?.name || tx.description || doc.label)}…`);
         try {
           const date = (det.lastEventDateTime || '').slice(0, 10);
@@ -724,33 +879,77 @@
           const resp = await API.sendMessage({
             type: 'SC_SAVE_DATAURL',
             folder: kind === 'Dividende' ? 'Dividenden' : 'Abrechnungen',
-            name: buildFilename(det, tx, kind),
+            year: date.slice(0, 4),
+            name: buildFilename(det, tx, kind, settings.dateFirst),
             dataUrl
           }).catch(() => null);
-          if (resp?.ok) ok++; else errors.push(`${doc.label}: speichern fehlgeschlagen ${resp?.error || ''}`);
+          if (resp?.ok) {
+            ok++;
+            savedBase = resp.base;
+            // Immer merken – auch wenn Überspringen gerade aus ist
+            doneIds.add(doc.id);
+            await EXT.storage.local.set({ [DONE_KEY]: [...doneIds] }).catch(() => {});
+          }
+          else errors.push(`${doc.label}: speichern fehlgeschlagen ${resp?.error || ''}`);
         } catch (e) {
           errors.push(`${doc.label || 'Dokument'}: ${String(e).slice(0, 80)}`);
+        } finally {
+          if (errors.length > errorsBefore) failedTx.add(txId);
         }
       }
+      clearChecks(targets, failedTx);
+      if (ok) setDisp(panel.querySelector('#sc-docdl-open'), 'block');
 
-      const kindLabel = mode === 'dividende' ? 'Belege' : 'Abrechnungen';
+      const where = savedBase ? `Downloads/${savedBase}` : 'Downloads';
+      const skipNote = skippedDone ? `${skippedDone} bereits geladene übersprungen.` : '';
+      const problems = [...warnings, ...errors];
+      if (cancelRequested) {
+        setStatus([`⏹ Abgebrochen – ${ok} von ${docItems.length} gespeichert in ${where}.`, ...problems.slice(0, 3)].join('\n'));
+        return;
+      }
       setStatus(errors.length
-        ? `⚠️ ${ok}/${docItems.length} gespeichert.\n${errors.slice(0, 4).join('\n')}`
-        : `✅ ${ok} ${kindLabel} gespeichert (Downloads/scalable-dokumente/Abrechnungen bzw. /Dividenden).`, errors.length ? 'err' : 'ok');
+        ? [`⚠️ ${ok}/${docItems.length} gespeichert in ${where}.`, skipNote, ...problems.slice(0, 4)].filter(Boolean).join('\n')
+        : [`✅ ${ok} ${modeLabel} gespeichert in ${where}.`, skipNote, ...warnings].filter(Boolean).join('\n'),
+        problems.length ? 'err' : 'ok');
     } catch (e) {
-      setStatus(`Fehler: ${String(e).slice(0, 160)}`, 'err');
+      const msg = String(e);
+      const hint = /HTTP 40[13]/.test(msg)
+        ? 'Bitte bei Scalable neu einloggen und erneut versuchen.'
+        : `Evtl. hat Scalable die Schnittstelle geändert – bitte melden: ${ISSUES_URL}`;
+      setStatus(`Fehler: ${msg.slice(0, 160)}\n${hint}`, 'err');
     } finally {
       running = false;
       updateGoButton();
     }
   }
 
+  // Nach dem Download: Haken erfolgreich erledigter Zeilen entfernen. Zeilen mit
+  // Fehlern (und nicht zugeordnete) bleiben markiert, damit man sie erneut laden kann.
+  function clearChecks(targets, failedTx) {
+    for (const t of targets) {
+      if (!t.sig || failedTx.has(t.id)) continue;
+      checkedSigs.delete(t.sig);
+      checkedRowData.delete(t.sig);
+    }
+    refreshChecks();
+  }
+
+  // Checkboxen, Zähler und Knopf an checkedSigs angleichen
+  function refreshChecks() {
+    for (const it of items.values()) it.cb.checked = checkedSigs.has(it.sig);
+    updatePillCount();
+    updateGoButton();
+  }
+
   function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
   // ============================================================
-  // Seiten-Erkennung: nur auf /broker/transactions aktiv
+  // Seiten-Erkennung: nur auf /broker/transactions aktiv – und erst, wenn der
+  // Haftungshinweis im Popup bestätigt wurde
   // ============================================================
+  let accepted = false;
   function onTxPage() { return /\/broker\/transactions\/?$/.test(location.pathname); }
+  function isActive() { return accepted && onTxPage(); }
   function isOwnNode(n) {
     if (!n || n.nodeType !== 1) return false;
     if (n.id === 'sc-docdl-panel' || n.id === 'sc-docdl-overlay' || n.id === 'sc-docdl-pill') return true;
@@ -762,7 +961,7 @@
   let lastOnTx = null;
   function checkLocation() {
     try {
-      const on = onTxPage();
+      const on = isActive();
       if (on !== lastOnTx) {
         lastOnTx = on;
         if (on) {
@@ -771,6 +970,7 @@
         } else {
           removeOverlay();
           if (panel) { setDisp(panel, 'none'); panel.classList.remove('show'); }
+          setDisp(pill, 'none');
         }
       }
       if (on) scheduleSync();
@@ -801,7 +1001,16 @@
     window.addEventListener('scroll', () => scheduleSync(true), { capture: true, passive: true });
     window.addEventListener('resize', () => scheduleSync(true), { passive: true });
     setInterval(checkLocation, 1200);
-    checkLocation();
+    EXT.storage.onChanged.addListener((changes, area) => {
+      if (area === 'local' && ACCEPT_KEY in changes) {
+        accepted = !!changes[ACCEPT_KEY].newValue;
+        checkLocation();
+      }
+    });
+    EXT.storage.local.get(ACCEPT_KEY).then((r) => {
+      accepted = !!r[ACCEPT_KEY];
+      checkLocation();
+    }).catch((e) => log('storage', e));
   });
 
   log('content script aktiv (Overlay-Modus, nur /broker/transactions)');

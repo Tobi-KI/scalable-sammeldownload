@@ -1,6 +1,6 @@
 # Datenschutzerklärung – Scalable Sammeldownload
 
-**Stand: 01.09.2026**
+**Stand: 28.10.2026**
 
 ## Kurzfassung
 
@@ -13,8 +13,8 @@ Diese Erweiterung sammelt, speichert oder überträgt **keine personenbezogenen 
 Die Erweiterung arbeitet ausschließlich lokal in deinem Browser. Sie:
 
 - liest innerhalb der von dir geöffneten Scalable-Capital-Webseite Transaktionslisten aus (Titel, ISIN, Datum), damit du einzelne Zeilen per Checkbox markieren kannst,
-- fängt Antworten der Scalable-Capital-Schnittstelle ab, die **du selbst** durch deine normale Nutzung der Webseite auslöst (z. B. beim Öffnen einer Transaktion), um daraus die Links zu deinen Dokumenten (z. B. Wertpapierabrechnungen) zu ermitteln,
-- lädt diese Dokumente mit **deiner bestehenden Browser-Anmeldung** herunter und speichert sie in deinen lokalen Browser-Download-Ordner (`Downloads/scalable-dokumente/`).
+- ruft – nur wenn du auf „PDFs herunterladen“ klickst – mit deiner bestehenden Anmeldung die Schnittstelle der Scalable-Capital-Webseite auf, um die Transaktionen und die zugehörigen Dokumente (z. B. Wertpapierabrechnungen) zu ermitteln. Diese Anfragen gehen ausschließlich an scalable.capital,
+- lädt diese Dokumente mit **deiner bestehenden Browser-Anmeldung** herunter und speichert sie in deinen lokalen Browser-Download-Ordner (standardmäßig `Downloads/scalable-dokumente/`, in den Einstellungen änderbar).
 
 ### Was passiert NICHT?
 
@@ -22,7 +22,7 @@ Die Erweiterung arbeitet ausschließlich lokal in deinem Browser. Sie:
 - Es werden **keine Zugangsdaten** (Passwort, 2FA-Codes, Tokens) gelesen, gespeichert oder weitergeleitet.
 - Es werden **keine Cookies ausgelesen oder gespeichert**.
 - Es findet **kein Tracking, keine Analyse und keine Werbung** statt.
-- Es werden **keine Daten dauerhaft über die Browser-Sitzung hinaus gespeichert** – außer der lokale Merker, ob du den Haftungsausschluss bestätigt hast (in `chrome.storage.local`, nur auf deinem Gerät).
+- Es werden **keine Daten dauerhaft über die Browser-Sitzung hinaus gespeichert** – außer dem lokalen Merker, ob du den Haftungsausschluss bestätigt hast, deinen Einstellungen (Ablageort, Dateiname) und einer Liste der technischen IDs bereits heruntergeladener Dokumente, damit diese nicht doppelt geladen werden, sowie den Verweis auf den zuletzt gespeicherten Download für „Ordner öffnen“ (alles in `chrome.storage.local`, nur auf deinem Gerät; der Verlauf lässt sich im Popup jederzeit löschen).
 
 ### Rechtsgrundlage
 

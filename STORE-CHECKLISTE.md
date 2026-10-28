@@ -3,11 +3,11 @@
 ## Vorbereitung (lokal)
 
 1. **Ordner aufräumen**: Im Ordner `scalable-sammeldownload` dürfen nur die Dateien liegen, die die Erweiterung braucht:
-   `manifest.json`, `injector.js`, `content.js`, `background.js`, `popup.html`, `popup.js`, `icon128.png`
-   → `README.md` und `DATENSCHUTZ.md` gehören **nicht** ins ZIP (nur als lokale Referenz / für den Store-Tab copy-pasten).
+   `manifest.json`, `content.js`, `background.js`, `popup.html`, `popup.js`, `icon16.png`, `icon48.png`, `icon128.png`
+   → `README.md`, `DATENSCHUTZ.md`, `store-assets/` und `make_store_assets.py` gehören **nicht** ins ZIP (nur als lokale Referenz / für den Store-Tab copy-pasten).
 2. **ZIP erstellen**: Den Ordner-Inhalt (nicht den Ordner selbst!) als ZIP packen, z. B.:
    ```powershell
-   Compress-Archive -Path scalable-sammeldownload\* -DestinationPath scalable-sammeldownload.zip
+   Compress-Archive -Path manifest.json,content.js,background.js,popup.html,popup.js,icon16.png,icon48.png,icon128.png -DestinationPath scalable-sammeldownload.zip -Force
    ```
 
 ## Store-Konto anlegen (einmalig 5 USD)
@@ -28,13 +28,13 @@
    - „Einzelnutzung" → ja
    - Frage nach Berechtigungs-Begründungen:
      - `downloads`: „Speichert die vom Nutzer ausgewählten PDF-Dokumente in den lokalen Download-Ordner."
-     - `storage`: „Speichert lokal, ob der Nutzer den Haftungsausschluss bestätigt hat. Keine anderen Daten."
-     - `scripting` + Host-Berechtigung `scalable.capital`: „Setzt Checkboxen in die Transaktionsliste der Scalable-Capital-Webseite und lädt die vom Nutzer ausgewählten Dokumente mit dessen bestehender Anmeldung herunter."
+     - `storage`: „Speichert lokal, ob der Nutzer den Haftungsausschluss bestätigt hat, seine Einstellungen (Ablageort, Dateiname) sowie die IDs bereits geladener Dokumente, um Duplikate zu vermeiden. Keine anderen Daten."
+     - Host-Berechtigung `scalable.capital`: „Zeigt Checkboxen über der Transaktionsliste der Scalable-Capital-Webseite an und lädt die vom Nutzer ausgewählten Dokumente mit dessen bestehender Anmeldung herunter."
    - Frage „Daten weitergegeben?" → **Nein**
    - Frage „Daten für andere Zwecke verwendet?" → **Nein**
    - Bei den „gehörigen Berechtigungen": keine abgefragten sensiblen Berechtigungen vorhanden (keine tabs/cookies/identity).
 8. **Vertrieb**: Alle Länder oder nach Wahl; Gebührenfrei (kostenlos).
-9. **Zertifizierung / Einreichung**: Datenschutzrichtlinien-URL wird verlangt – hier有两种 Optionen:
+9. **Zertifizierung / Einreichung**: Datenschutzrichtlinien-URL wird verlangt – hier gibt es zwei Optionen:
    - a) GitHub Gist / GitHub Pages mit dem Inhalt von `DATENSCHUTZ.md` (empfohlen, kostenlose URL)
    - b) Falls nicht vorhanden: im Formular angeben, dass keine Daten gesammelt werden – Feld ist trotzdem Pflicht, also brauchst du eine öffentliche URL. Gist ist am schnellsten.
 
